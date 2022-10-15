@@ -6,7 +6,7 @@ import socket
 from base64 import b64decode
 import wave
 import json
-
+import math
 
 def get_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -30,12 +30,38 @@ print(
 
 
 async def echo(websocket, path):
+    lastCouple = [2.27,2.27]
+    index = 0
+    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>henlo")
     async for message in websocket:
         if path == '/accelerometer':
             data = await websocket.recv()
-            print(data)
-            f = open("accelerometer.txt", "a")
-            f.write(data+"\n")
+            jsonData = json.loads(data)
+            y = abs(float(jsonData["y"]))
+            if(y == 0):
+                y = 0.1
+            y = math.log(y)
+            diff = .2
+            upper = 2.27*(1+diff)
+            lower = 2.27*(1-diff)
+            
+            state = ">>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<"
+            if(upper - y < 0 or y - lower < 0):
+                state = "running"
+            else:
+                for i in range(0, len(lastCouple)):
+                    if(upper - lastCouple[i] < 0 or lastCouple[i] - lower < 0):
+                        state = "running"
+                        break
+            
+            lastCouple[index] = y
+            index += 1
+            if(index >= len(lastCouple)):
+                index = 0
+            print(state)
+            # print(data)
+            # f = open("accelerometer.txt", "a")
+            # f.write(data+"\n")
 
         if path == '/gyroscope':
             data = await websocket.recv()
