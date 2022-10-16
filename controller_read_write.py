@@ -4,6 +4,14 @@ import math
 import threading
 import time
 import json
+import asyncio
+import websockets
+import socket
+from base64 import b64decode
+
+# Variables filled by server
+lastCouple = [0,0,0,0,0,0]
+limit = -1.3
 
 # Import buttons
 buttons = {}
@@ -29,7 +37,11 @@ def change_vg_thumbstick(trigger, value_x, value_y=0):
     elif(trigger == "right_trigger"):
         gamepad.right_trigger(value_x)
     elif(trigger == "left_joystick"):
-        gamepad.left_joystick_float(x_value_float=value_x, y_value_float=value_y)
+        gamepad.left_joystick(x_value=0, y_value=0)
+        for i in range(0, len(lastCouple)):
+            if(lastCouple[i] < limit):
+                gamepad.left_joystick_float(x_value_float=value_x, y_value_float=value_y)
+                break
     elif(trigger == "right_joystick"):
         gamepad.right_joystick_float(x_value_float=value_x, y_value_float=value_y)
     gamepad.update()
@@ -123,10 +135,72 @@ class XboxController(object):
                         change_vg_button("right", 0)
                         change_vg_button("left", 0)
 
+# Below is the code for the server
+def get_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # doesn't even have to be reachable
+        s.connect(('10.255.255.255', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
 
+def print_server_info():
+    hostname = socket.gethostname()
+    IPAddr = get_ip()
+    print("Your Computer Name is: " + hostname)
+    print("Your Computer IP Address is: " + IPAddr)
+    print(
+        "* Enter {0}:5000 in the app.\n* Press the 'Set IP Address' button.\n* Select the sensors to stream.\n* Update the 'update interval' by entering a value in ms.".format(IPAddr))
 
+def process_values(y,z):
+    avg_z = 1.614977
+    avg_y = -7.93195
+    std_z = 3.441466
+    std_y = 5.032324
+
+    norm_z = (z-avg_z)/std_z
+    norm_y = (y-avg_y)/std_y
+    return (norm_z/norm_y)
+
+async def echo(websocket, path):
+    index = 0
+    print(">>>>>>>>>>>>Starting<<<<<<<<<<<<")
+    async for message in websocket:
+        if path == '/accelerometer':
+            data = await websocket.recv()
+            jsonData = json.loads(data)
+            y = float(jsonData["y"])
+            z = float(jsonData["z"])
+            
+            test_value = process_values(y,z)
+            # state = ">>>>>>>>>><<<<<<<<<<"
+            # if(test_value < limit):
+            #     state = "moving"
+            # else:
+            #     for i in range(0, len(lastCouple)):
+            #         if(lastCouple[i] < limit):
+            #             state = "running"
+            #             break
+            
+            lastCouple[index] = test_value
+            index += 1
+            if(index >= len(lastCouple)):
+                index = 0
+            # print(state)
+            # print(data)
+            # f = open("accelerometer.txt", "a")
+            # f.write(data+"\n")
 
 if __name__ == '__main__':
     joy = XboxController()
-    while True:
-        time.sleep(.1)
+    print_server_info()
+    asyncio.get_event_loop().run_until_complete(
+    websockets.serve(echo, '0.0.0.0', 5000, max_size=1_000_000_000))
+    asyncio.get_event_loop().run_forever()
+
+    # while True:
+    #     time.sleep(.1)
